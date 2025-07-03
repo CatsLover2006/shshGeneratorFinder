@@ -20,14 +20,23 @@ AC_SUBST([VERSION_COMMIT_SHA], ["m4_esyscmd([git rev-parse HEAD | tr -d '\n'])"]
 AC_PROG_CXX
 AC_PROG_CC
 
+# Library versions
+OPENSSL_REQUIRES_STR="openssl >= 0.9.8"
+LIBPLIST_REQUIRES_STR="libplist-2.0 >= 2.2.0"
+LIBGENERAL_REQUIRES_STR="libgeneral >= 39"
+
 crypto_backend="none"
 # Check for operating system
 AC_MSG_CHECKING([whether we need platform-specific build settings])
 case $host_os in
   darwin* )
-  AC_DEFINE(HAVE_COMMCRYPTO, 1, [Define if you have CommonCrypto (macOS)])
-  crypto_backend="CommCrypto"
-        ;;
+    AC_DEFINE(HAVE_COMMCRYPTO, 1, [Define if you have CommonCrypto (macOS)])
+    crypto_backend="CommCrypto"
+    have_openssl=no
+  ;;
+  * )
+    PKG_CHECK_MODULES(openssl, $OPENSSL_REQUIRES_STR, have_openssl=yes, have_openssl=no)
+  ;;
 esac
 
 CXXFLAGS+=" -std=c++11"
@@ -35,10 +44,6 @@ CFLAGS+=" -std=c11"
 # Versioning.
 
 # Checks for libraries.
-OPENSSL_REQUIRES_STR="openssl >= 0.9.8"
-LIBPLIST_REQUIRES_STR="libplist-2.0 >= 2.2.0"
-LIBGENERAL_REQUIRES_STR="libgeneral >= 39"
-PKG_CHECK_MODULES(openssl, $OPENSSL_REQUIRES_STR, have_openssl=yes, have_openssl=no)
 PKG_CHECK_MODULES(libplist, $LIBPLIST_REQUIRES_STR, have_plist=yes, have_plist=no)
 PKG_CHECK_MODULES(libgeneral, $LIBGENERAL_REQUIRES_STR)
 
