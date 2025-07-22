@@ -301,134 +301,8 @@ int main_r(int argc, const char * argv[]) {
     }
 
     if (workingBuffer) {
-        if (flags & FLAG_EXTRACT) {
-            //extract
-            bool didExtract = false;
-            ASN1DERElement file(workingBuffer, workingBufferSize);
-
-            if (outFile) {
-                //check for payload extraction
-                if (isIMG4(file)) {
-                    file = getIM4PFromIMG4(file);
-                } else if (!isIM4P(file)){
-                    reterror("File not recognised");
-                }
-                
-                const char *compression = NULL;
-                ASN1DERElement payload = getPayloadFromIM4P(file, decryptIv, decryptKey, &compression);
-                saveToFile(outFile, payload.payload(), payload.payloadSize());
-
-                if (compression) {
-                    printf("Extracted (and uncompressed %s) IM4P payload to %s\n",compression,outFile);
-                }else{
-                    printf("Extracted IM4P payload to %s\n",outFile);
-                }
-                didExtract = true;
-            } else if (isIMG4(file)) {
-                //extract im4p an im4m from img4
-                if (im4pFile) {
-                    auto im4p = getIM4PFromIMG4(file);
-                    saveToFile(im4pFile, im4p.buf(), im4p.size());
-                    printf("Extracted IM4P to %s\n",im4pFile);
-                    didExtract = true;
-                }
-                if (im4mFile) {
-                    auto im4m = getIM4MFromIMG4(file);
-                    saveToFile(im4mFile, im4m.buf(), im4m.size());
-                    printf("Extracted IM4M to %s\n",im4mFile);
-                    didExtract = true;
-                }
-            }else if (isIM4M(file)){
-                retassure(im4mFile, "requested extracting IM4M from SHSH but no output path was given");
-                saveToFile(im4mFile, file.buf(), file.size());
-                printf("Saved IM4M to %s\n",im4mFile);
-                didExtract = true;
-            }
-
-            if (!didExtract) {
-                error("Failed to extract!\n");
-                return -1;
-            }
-        } else if (flags & FLAG_CREATE && im4pType){
-            ASN1DERElement im4p = getEmptyIM4PContainer(im4pType, im4pDesc);
-
-            im4p = appendPayloadToIM4P(im4p, workingBuffer, workingBufferSize, compressionType);
-
-            saveToFile(outFile, im4p.buf(), im4p.size());
-            printf("Created IM4P file at %s\n",outFile);
-        } else if (flags & FLAG_RENAME){
-            retassure(im4pType, "typen required");
-            retassure(outFile, "outputfile required");
-
-            ASN1DERElement im4p(workingBuffer, workingBufferSize);
-            string seqName = getNameForSequence(workingBuffer, workingBufferSize);
-            if (seqName != "IM4P"){
-                reterror("File not an IM4P");
-            }
-
-            im4p = renameIM4P(im4p, im4pType);
-            saveToFile(outFile, im4p.buf(), im4p.size());
-            printf("Saved new renamed IM4P to %s\n",outFile);
-        }
 #ifdef HAVE_PLIST
-        else if (flags & FLAG_CONVERT){
-            plist_t newshsh = NULL;
-            plist_t generator = NULL;
-            plist_t data = NULL;
-            char *xml = NULL;
-            uint32_t xmlSize = 0;
-            cleanup([&]{
-                safeFreeCustom(newshsh,plist_free);
-                safeFreeCustom(data,plist_free);
-                safeFreeCustom(generator,plist_free);
-                safeFree(xml);
-            });
-            retassure(shshFile, "output path for shsh file required");
-            ASN1DERElement im4m(workingBuffer, workingBufferSize);
-            
-            
-            if (isIMG4(im4m)) {
-                try {
-                    printf("Found IM4R extracting generator: ");
-                    char *generatorStr = NULL;
-                    cleanup([&]{
-                        safeFree(generatorStr);
-                    });
-                    ASN1DERElement im4r = getIM4RFromIMG4(im4m);
-                    ASN1DERElement bncn = getBNCNFromIM4R(im4r);
-                    
-                    size_t generatorStrSize = bncn.payloadSize()*2+2+1;
-                    generatorStr = (char*)malloc(generatorStrSize);
-                    strcpy(generatorStr, "0x");
-                    std::string octetString = bncn.getStringValue();
-                    std::reverse(octetString.begin(), octetString.end());
-                    for (char c : octetString) {
-                        assure(generatorStrSize-strlen(generatorStr)>=3);
-                        snprintf(&generatorStr[strlen(generatorStr)], 3, "%02x",(unsigned char)c);
-                    }
-                    assure(generator = plist_new_string(generatorStr));
-                    printf("ok\n");
-                } catch (...) {
-                    printf("failed!\n");
-                }
-                
-                im4m = getIM4MFromIMG4(im4m);
-            }
-            
-            retassure(isIM4M(im4m), "Not IM4M file");
-
-            retassure(newshsh = plist_new_dict(),"failed to create new plist dict");
-            retassure(data = plist_new_data((const char*)im4m.buf(), im4m.size()),"failed to create plist data from im4m buf");
-
-            plist_dict_set_item(newshsh, "ApImg4Ticket", data); data = NULL;
-            if (generator) {
-                plist_dict_set_item(newshsh, "generator", generator); generator = NULL;
-            }
-
-            retassure((plist_to_xml(newshsh, &xml, &xmlSize),xml), "failed to convert plist to xml");
-            saveToFile(shshFile, xml, xmlSize);
-            printf("Saved IM4M to %s\n",shshFile);
-        } else if (buildmanifestFile){
+        if (buildmanifestFile){
             //verify
             ASN1DERElement file(workingBuffer, workingBufferSize);
             std::string im4pSHA1;
@@ -480,10 +354,14 @@ int main_r(int argc, const char * argv[]) {
                 if (im4pElemDgstName.size()) {
                     printf("[IMG4TOOL] IMG4 contains an IM4P which is correctly signed by IM4M\n");
                 }
-                if (generator) {
-                    bool isGenValid = isGeneratorValidForIM4M(file,generator);
-                    printf("[IMG4TOOL] SHSH2 contains generator %s which is %s for nonce in IM4M!\n", generator, isGenValid ? "GOOD" : "BAD");
-                }
+                unsigned long long i = 0;
+                do {
+                    if (isGeneratorValidForIM4M(file, i)) {
+                        printf("[IMG4TOOL] SHSH2 generator could be 0x%16llx.\n", i);
+                    }
+                    i++;
+                    if (!(i & 0x0ffffff)) printf("We're at 0x%16llx.\n", i);
+                } while (i);
                 
             }else if (isIM4M(file)){
                 reterror("Verify does not make sense on IM4P file!");
@@ -491,7 +369,6 @@ int main_r(int argc, const char * argv[]) {
                 reterror("File not recognised");
             }
         }
-#endif //HAVE_PLIST
         else {
             //printing only
             string seqName = getNameForSequence(workingBuffer, workingBufferSize);
@@ -506,46 +383,9 @@ int main_r(int argc, const char * argv[]) {
                 reterror("File not recognised");
             }
         }
-    } else if (flags & FLAG_CREATE){
-        //create IMG4 file
-        ASN1DERElement img4 = getEmptyIMG4Container();
-
-        retassure(im4pFile, "im4p file is required for img4");
-
-        if (im4pFile) {
-            char *buf = NULL;
-            size_t bufSize = 0;
-            cleanup([&]{
-                safeFree(buf);
-            });
-            buf = readFromFile(im4pFile, &bufSize);
-
-            ASN1DERElement im4p(buf,bufSize);
-
-            img4 = appendIM4PToIMG4(img4, im4p);
-        }
-
-        if (im4mFile || shshFile){
-            char *buf = NULL;
-            size_t bufSize = 0;
-            cleanup([&]{
-                safeFree(buf);
-            });
-
-            if (im4mFile) {
-                buf = readFromFile(im4mFile, &bufSize);
-            }
-#ifdef HAVE_PLIST
-            else if (shshFile){
-                buf = im4mFormShshFile(shshFile, &bufSize, NULL);
-            }
+#else
+        reterror("Not compiled with plist");
 #endif //HAVE_PLIST
-            ASN1DERElement im4m(buf,bufSize);
-            img4 = appendIM4MToIMG4(img4, im4m);
-        }
-
-        saveToFile(outFile, img4.buf(), img4.size());
-        printf("Created IMG4 file at %s\n",outFile);
     }
     else{
         reterror("No working buffer");
